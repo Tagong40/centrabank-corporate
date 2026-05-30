@@ -942,7 +942,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   
                   <button
                     type="submit"
-                    className="w-full sm:w-auto px-8 py-4 bg-indigo-650 hover:bg-indigo-750 text-white font-black text-xs uppercase tracking-wider rounded-xl transition shadow-lg shadow-indigo-100 flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap"
+                    className="w-full sm:w-auto px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition shadow-lg shadow-indigo-100 flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap"
                   >
                     {activeTab === 'deposit' ? (
                       <>
