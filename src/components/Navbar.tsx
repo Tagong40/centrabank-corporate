@@ -36,6 +36,9 @@ const Navbar: React.FC = () => {
   const isActive = (to: string) =>
     to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
 
+  // Login page has its own header — don't double up
+  if (location.pathname === '/login') return null;
+
   return (
     <>
       {/* ── Top bar ── */}

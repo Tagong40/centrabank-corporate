@@ -54,19 +54,25 @@ const Login: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-6 text-xs text-gray-500 font-medium">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4 text-xs text-gray-500 font-medium">
+            <div className="hidden sm:flex items-center gap-2">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
               </span>
               <span>All Systems Operational</span>
             </div>
-            <span className="text-gray-200">|</span>
-            <div className="flex items-center gap-1">
+            <span className="hidden sm:block text-gray-200">|</span>
+            <div className="hidden sm:flex items-center gap-1">
               <ShieldCheck className="w-4 h-4 text-indigo-600" />
-              <span>Full 256-bit SSL Protection</span>
+              <span>256-bit SSL</span>
             </div>
+            <a
+              href="#signin"
+              className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all text-xs"
+            >
+              Sign In <ChevronRight className="w-3.5 h-3.5" />
+            </a>
           </div>
         </div>
       </header>
@@ -231,7 +237,7 @@ const Login: React.FC = () => {
           </div>
 
           {/* Right Column: Portal Login Card */}
-          <div className="lg:col-span-5 md:max-w-md md:mx-auto lg:w-full">
+          <div id="signin" className="lg:col-span-5 md:max-w-md md:mx-auto lg:w-full">
             <div className="bg-white p-8 sm:p-10 rounded-[2.5rem] shadow-xl shadow-gray-200/40 border border-gray-100 flex flex-col justify-between">
               
               <div>
