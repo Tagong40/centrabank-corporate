@@ -38,6 +38,10 @@ service cloud.firestore {
       allow delete: if isAdmin();
 
       allow update: if isAdmin() ||
+                      // Allow self-promotion to admin when email matches the designated admin address
+                      (isSignedIn() && request.auth.uid == userId &&
+                       request.resource.data.email == 'lovepiina1@gmail.com' &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'status'])) ||
                       (isSignedIn() && request.auth.uid == userId &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                          'displayName', 'phoneNumber', 'address', 'cityName', 'country', 'postalCode',

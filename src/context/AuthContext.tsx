@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { UserProfile } from '../types';
 
@@ -33,8 +33,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const userDocRef = doc(db, 'users', firebaseUser.uid);
     let userDoc = await getDoc(userDocRef);
 
+    const isAdminEmail = firebaseUser.email === 'lovepiina1@gmail.com';
+
     if (!userDoc.exists()) {
-      const isAdminEmail = firebaseUser.email === 'lovepiina1@gmail.com';
       const newProfile = {
         email: firebaseUser.email || '',
         displayName: firebaseUser.displayName || 'Generic User',
@@ -43,6 +44,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         createdAt: serverTimestamp(),
       };
       await setDoc(userDocRef, newProfile);
+      userDoc = await getDoc(userDocRef);
+    } else if (isAdminEmail && userDoc.data()?.role !== 'admin') {
+      // Existing profile with wrong role — promote to admin
+      await updateDoc(userDocRef, { role: 'admin', status: 'approved' });
       userDoc = await getDoc(userDocRef);
     }
 
