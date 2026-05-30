@@ -26,14 +26,19 @@ const friendlyError = (code: string) => {
   const map: Record<string, string> = {
     'auth/invalid-email':            'Invalid email address.',
     'auth/user-not-found':           'No account found with this email.',
-    'auth/wrong-password':           'Incorrect password.',
+    'auth/wrong-password':           'Incorrect email or password.',
     'auth/invalid-credential':       'Incorrect email or password.',
     'auth/email-already-in-use':     'An account with this email already exists.',
     'auth/weak-password':            'Password must be at least 8 characters.',
-    'auth/too-many-requests':        'Too many attempts. Try again later.',
+    'auth/too-many-requests':        'Too many attempts — please try again later.',
     'auth/network-request-failed':   'Network error. Check your connection.',
+    'auth/operation-not-allowed':    'Email/Password sign-in is not enabled. Enable it in Firebase Console → Authentication → Sign-in methods.',
+    'auth/missing-password':         'Please enter your password.',
+    'auth/missing-email':            'Please enter your email address.',
+    'auth/popup-closed-by-user':     'Sign-in was cancelled.',
+    'auth/account-exists-with-different-credential': 'An account already exists with this email.',
   };
-  return map[code] ?? 'Something went wrong. Please try again.';
+  return map[code] ?? `Sign-in error (${code}). Please try again.`;
 };
 
 const Login: React.FC = () => {
