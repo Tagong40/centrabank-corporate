@@ -34,7 +34,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let userDoc = await getDoc(userDocRef);
 
     if (!userDoc.exists()) {
-      const isAdminEmail = firebaseUser.email === 'tensangnajuls@gmail.com';
+      const isAdminEmail = firebaseUser.email === 'lovepiina1@gmail.com';
       const newProfile = {
         email: firebaseUser.email || '',
         displayName: firebaseUser.displayName || 'Generic User',
