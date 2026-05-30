@@ -1,0 +1,131 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() { 
+      return request.auth != null; 
+    }
+    
+    function isAdmin() {
+      let path = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isSignedIn() && exists(path) && get(path).data.role == 'admin';
+    }
+
+    match /test/connection {
+      allow read: if isSignedIn();
+    }
+
+    match /users/{userId} {
+      allow get: if (isSignedIn() && request.auth.uid == userId) || isAdmin();
+      allow list: if isAdmin();
+      
+      allow create: if (isSignedIn() && request.auth.uid == userId) && 
+                      request.resource.data.email is string &&
+                      request.resource.data.displayName is string &&
+                      request.resource.data.role in ['customer', 'admin'] &&
+                      request.resource.data.status in ['pending', 'approved', 'rejected'] &&
+                      request.resource.data.createdAt == request.time &&
+                      (
+                        (request.resource.data.role == 'customer' && request.resource.data.status == 'pending') ||
+                        (request.resource.data.email == 'tensangnajuls@gmail.com' && request.resource.data.role == 'admin' && request.resource.data.status == 'approved')
+                      ) &&
+                      request.resource.data.keys().hasAll(['email', 'displayName', 'role', 'status', 'createdAt']) &&
+                      request.resource.data.keys().size() == 5;
+                      
+      allow update: if isAdmin() ||
+                      (isSignedIn() && request.auth.uid == userId && 
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                         'displayName', 'phoneNumber', 'address', 'cityName', 'country', 'postalCode',
+                         'companyName', 'taxId', 'twoFactorEnabled', 'securityPINCode', 'dailyTransferLimit',
+                         'ipWhitelist', 'preferredLanguage'
+                       ]));
+    }
+
+    match /accounts/{accountId} {
+      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && 
+                      request.resource.data.userId == request.auth.uid && 
+                      request.resource.data.balance is number &&
+                      request.resource.data.createdAt == request.time;
+                      
+      allow update: if isAdmin() || (isSignedIn() && (
+                      // Case A: Owner update (Rename or Withdraw)
+                      (resource.data.userId == request.auth.uid && 
+                       request.resource.data.diff(resource.data).affectedKeys().hasAny(['accountName', 'balance'])) ||
+                      // Case B: Deposit from another user
+                      // We allow an increment to balance ONLY if it's tied to a transaction document 
+                      // being created in the same batch.
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balance', 'lastTransactionId']) &&
+                       request.resource.data.balance > resource.data.balance &&
+                       // Verify the transaction document exists in the same batch
+                       existsAfter(/databases/$(database)/documents/transactions/$(request.resource.data.lastTransactionId)) &&
+                       // Verify the transaction document details match this deposit
+                       getAfter(/databases/$(database)/documents/transactions/$(request.resource.data.lastTransactionId)).data.toAccountId == accountId &&
+                       getAfter(/databases/$(database)/documents/transactions/$(request.resource.data.lastTransactionId)).data.amount == (request.resource.data.balance - resource.data.balance)
+                      )
+                    ));
+    }
+
+    match /transactions/{transactionId} {
+      allow get, list: if isSignedIn() && (
+        resource.data.fromUserId == request.auth.uid || 
+        resource.data.toUserId == request.auth.uid || 
+        isAdmin()
+      );
+      
+      allow create: if isSignedIn() && 
+                      request.resource.data.amount > 0 &&
+                      (
+                        // Case 1: Withdrawal/Transfer from owned account
+                        (request.resource.data.fromUserId == request.auth.uid && 
+                         get(/databases/$(database)/documents/accounts/$(request.resource.data.fromAccountId)).data.userId == request.auth.uid &&
+                         (
+                           request.resource.data.toUserId == 'external' ||
+                           get(/databases/$(database)/documents/accounts/$(request.resource.data.toAccountId)).data.userId == request.resource.data.toUserId
+                         ))
+                        ||
+                        // Case 2: Top-up/Deposit into owned account (External Source)
+                        (request.resource.data.type == 'topup' && 
+                         request.resource.data.toUserId == request.auth.uid &&
+                         get(/databases/$(database)/documents/accounts/$(request.resource.data.toAccountId)).data.userId == request.auth.uid)
+                      );
+                      
+      allow update: if isAdmin();
+      allow delete: if false; 
+    }
+
+    match /cards/{cardId} {
+      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && 
+                      request.resource.data.userId == request.auth.uid && 
+                      request.resource.data.createdAt == request.time;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && 
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      allow delete: if isAdmin();
+    }
+
+    match /investments/{investmentId} {
+      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && 
+                      request.resource.data.userId == request.auth.uid && 
+                      request.resource.data.createdAt == request.time;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && 
+                      request.resource.data.diff(resource.data).affectedKeys().hasAny(['quantity', 'averagePrice', 'currentValue']);
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+    }
+
+    match /deposit_boxes/{boxId} {
+      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && 
+                      request.resource.data.userId == request.auth.uid && 
+                      request.resource.data.createdAt == request.time;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && 
+                      request.resource.data.diff(resource.data).affectedKeys().hasAny(['label', 'secretPIN', 'secureContent', 'insuranceTier', 'status']);
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+    }
+  }
+}

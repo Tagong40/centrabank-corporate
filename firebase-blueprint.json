@@ -1,0 +1,131 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user profile information, security clearance parameters, and preferences.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["customer", "admin"] },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "phoneNumber": { "type": "string" },
+        "address": { "type": "string" },
+        "cityName": { "type": "string" },
+        "country": { "type": "string" },
+        "postalCode": { "type": "string" },
+        "companyName": { "type": "string" },
+        "taxId": { "type": "string" },
+        "twoFactorEnabled": { "type": "boolean" },
+        "securityPINCode": { "type": "string" },
+        "dailyTransferLimit": { "type": "number" },
+        "ipWhitelist": { "type": "string" },
+        "preferredLanguage": { "type": "string" }
+      },
+      "required": ["email", "role", "status", "createdAt"]
+    },
+    "Account": {
+      "title": "Bank Account",
+      "description": "Represents a bank account with a balance.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "accountName": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "balance": { "type": "number" },
+        "currency": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "accountName", "accountNumber", "balance", "currency", "createdAt"]
+    },
+    "Transaction": {
+      "title": "Transaction Record",
+      "description": "Stores details of a financial transaction between accounts.",
+      "type": "object",
+      "properties": {
+        "fromAccountId": { "type": "string" },
+        "fromUserId": { "type": "string" },
+        "toAccountNumber": { "type": "string" },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["completed", "failed"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fromAccountId", "fromUserId", "toAccountNumber", "amount", "status", "timestamp"]
+    },
+    "Card": {
+      "title": "Bank Card",
+      "description": "A debit or credit card associated with a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "accountId": { "type": "string" },
+        "cardHolder": { "type": "string" },
+        "cardNumber": { "type": "string" },
+        "expiry": { "type": "string" },
+        "type": { "type": "string", "enum": ["debit", "credit"] },
+        "status": { "type": "string", "enum": ["active", "locked"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "accountId", "cardHolder", "cardNumber", "expiry", "type", "status", "createdAt"]
+    },
+    "Investment": {
+      "title": "Investment Asset",
+      "description": "An investment asset owned by the user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "assetType": { "type": "string", "enum": ["stock", "crypto", "fund"] },
+        "symbol": { "type": "string" },
+        "name": { "type": "string" },
+        "quantity": { "type": "number" },
+        "averagePrice": { "type": "number" },
+        "currentValue": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "assetType", "symbol", "name", "quantity", "averagePrice", "createdAt"]
+    },
+    "DepositBox": {
+      "title": "Deposit Box",
+      "description": "Represents a security deposit box where users store secrets.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "label": { "type": "string" },
+        "secretPIN": { "type": "string" },
+        "secureContent": { "type": "string" },
+        "insuranceTier": { "type": "string" },
+        "status": { "type": "string", "enum": ["locked", "unlocked"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "label", "secretPIN", "secureContent", "insuranceTier", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data."
+    },
+    "/accounts/{accountId}": {
+      "schema": "Account",
+      "description": "Bank account details."
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Transaction logs."
+    },
+    "/cards/{cardId}": {
+      "schema": "Card",
+      "description": "Virtual or physical cards."
+    },
+    "/investments/{investmentId}": {
+      "schema": "Investment",
+      "description": "User investment portfolio."
+    },
+    "/deposit_boxes/{boxId}": {
+      "schema": "DepositBox",
+      "description": "Cryptographically secure ledger vaults."
+    }
+  }
+}
