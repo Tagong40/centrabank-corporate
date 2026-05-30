@@ -2,8 +2,43 @@ import React, { useEffect, useState } from 'react';
 import { collection, query, orderBy, onSnapshot, doc, updateDoc, getDocs, where, runTransaction, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { UserProfile, Transaction, BankAccount } from '../types';
-import { Users, FileText, CheckCircle, XCircle, Clock, Shield, ExternalLink, Search, TrendingUp, ArrowUpRight, ArrowDownLeft, Coins, Trash2, RotateCcw } from 'lucide-react';
+import { Users, FileText, CheckCircle, XCircle, Clock, Shield, ExternalLink, Search, TrendingUp, ArrowUpRight, ArrowDownLeft, Coins, Trash2, RotateCcw, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+type ConfirmConfig = { title: string; message: string; onConfirm: () => void };
+
+const ConfirmModal = ({ title, message, onConfirm, onCancel }: {
+  title: string; message: string; onConfirm: () => void; onCancel: () => void;
+}) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onCancel} />
+    <motion.div
+      initial={{ scale: 0.95, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      className="relative bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm z-10"
+    >
+      <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center mb-5">
+        <AlertTriangle className="w-6 h-6 text-red-500" />
+      </div>
+      <h3 className="text-lg font-black text-gray-900 mb-2">{title}</h3>
+      <p className="text-sm text-gray-500 leading-relaxed mb-7">{message}</p>
+      <div className="flex gap-3">
+        <button
+          onClick={onCancel}
+          className="flex-1 h-11 rounded-xl border-2 border-gray-200 text-xs font-black text-gray-600 uppercase tracking-wider hover:border-gray-300 transition-all"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-red-100"
+        >
+          Confirm
+        </button>
+      </div>
+    </motion.div>
+  </div>
+);
 
 const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'users' | 'transactions'>('users');
@@ -11,6 +46,7 @@ const AdminDashboard: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [confirm, setConfirm] = useState<ConfirmConfig | null>(null);
 
   useEffect(() => {
     // Admin list users
@@ -40,31 +76,39 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleDeleteUser = async (user: UserProfile) => {
-    if (!window.confirm(`Permanently delete ${user.displayName} (${user.email})? This will remove their profile and all associated accounts, cards, and investments.`)) return;
-    try {
-      const batch = writeBatch(db);
-      const collections = ['accounts', 'cards', 'investments', 'deposit_boxes'];
-      for (const col of collections) {
-        const snap = await getDocs(query(collection(db, col), where('userId', '==', user.uid)));
-        snap.docs.forEach(d => batch.delete(d.ref));
-      }
-      batch.delete(doc(db, 'users', user.uid));
-      await batch.commit();
-    } catch (err: any) {
-      console.error("Failed to delete user", err);
-      alert(err.message || "Failed to delete user.");
-    }
+  const handleDeleteUser = (user: UserProfile) => {
+    setConfirm({
+      title: 'Delete User',
+      message: `Permanently delete ${user.displayName} (${user.email})? This will remove their profile and all associated accounts, cards, and investments.`,
+      onConfirm: async () => {
+        try {
+          const batch = writeBatch(db);
+          const collections = ['accounts', 'cards', 'investments', 'deposit_boxes'];
+          for (const col of collections) {
+            const snap = await getDocs(query(collection(db, col), where('userId', '==', user.uid)));
+            snap.docs.forEach(d => batch.delete(d.ref));
+          }
+          batch.delete(doc(db, 'users', user.uid));
+          await batch.commit();
+        } catch (err: any) {
+          console.error("Failed to delete user", err);
+        }
+      },
+    });
   };
 
-  const handleResetCompliance = async (user: UserProfile) => {
-    if (!window.confirm(`Force ${user.displayName} to redo compliance onboarding?`)) return;
-    try {
-      await updateDoc(doc(db, 'users', user.uid), { onboardingCompleted: false });
-    } catch (err: any) {
-      console.error("Failed to reset compliance", err);
-      alert(err.message || "Failed to reset compliance.");
-    }
+  const handleResetCompliance = (user: UserProfile) => {
+    setConfirm({
+      title: 'Reset Compliance',
+      message: `Force ${user.displayName} to redo the full KYC compliance onboarding? They will be blocked from the app until they complete it again.`,
+      onConfirm: async () => {
+        try {
+          await updateDoc(doc(db, 'users', user.uid), { onboardingCompleted: false });
+        } catch (err: any) {
+          console.error("Failed to reset compliance", err);
+        }
+      },
+    });
   };
 
   const handleTransactionStatusChange = async (tx: Transaction, newStatus: Transaction['status']) => {
@@ -397,6 +441,15 @@ const AdminDashboard: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {confirm && (
+        <ConfirmModal
+          title={confirm.title}
+          message={confirm.message}
+          onConfirm={() => { confirm.onConfirm(); setConfirm(null); }}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
     </div>
   );
 };

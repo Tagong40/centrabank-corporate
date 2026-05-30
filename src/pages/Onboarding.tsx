@@ -49,6 +49,55 @@ const steps = [
   { label: 'Agreements', icon: FileText },
 ];
 
+const SelectField = ({ label, value, onChange, options }: {
+  label: string; value: string; onChange: (v: string) => void; options: string[];
+}) => (
+  <div className="space-y-2">
+    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">{label}</label>
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="w-full h-12 px-4 bg-gray-50 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-xl transition-all font-semibold text-sm text-gray-900 outline-none"
+    >
+      <option value="">Select…</option>
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
+  </div>
+);
+
+const InputField = ({ label, value, onChange, placeholder, type = 'text' }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
+}) => (
+  <div className="space-y-2">
+    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">{label}</label>
+    <input
+      type={type}
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full h-12 px-4 bg-gray-50 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-xl transition-all font-semibold text-sm text-gray-900 placeholder:text-gray-300 outline-none"
+    />
+  </div>
+);
+
+const ToggleField = ({ label, description, value, onChange }: {
+  label: string; description: string; value: boolean; onChange: (v: boolean) => void;
+}) => (
+  <div className="flex items-start justify-between gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+    <div>
+      <p className="text-sm font-bold text-gray-900">{label}</p>
+      <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{description}</p>
+    </div>
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      className={`relative flex-shrink-0 w-12 h-6 rounded-full transition-colors ${value ? 'bg-indigo-600' : 'bg-gray-200'}`}
+    >
+      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${value ? 'translate-x-6' : ''}`} />
+    </button>
+  </div>
+);
+
 export default function Onboarding() {
   const { profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
@@ -156,58 +205,6 @@ export default function Onboarding() {
       setSubmitting(false);
     }
   };
-
-  const SelectField = ({ label, value, onChange, options, required = true }: {
-    label: string; value: string; onChange: (v: string) => void;
-    options: string[]; required?: boolean;
-  }) => (
-    <div className="space-y-2">
-      <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">{label}</label>
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        required={required}
-        className="w-full h-12 px-4 bg-gray-50 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-xl transition-all font-semibold text-sm text-gray-900 outline-none"
-      >
-        <option value="">Select…</option>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </div>
-  );
-
-  const InputField = ({ label, value, onChange, placeholder, type = 'text' }: {
-    label: string; value: string; onChange: (v: string) => void;
-    placeholder?: string; type?: string;
-  }) => (
-    <div className="space-y-2">
-      <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full h-12 px-4 bg-gray-50 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-xl transition-all font-semibold text-sm text-gray-900 placeholder:text-gray-300 outline-none"
-      />
-    </div>
-  );
-
-  const ToggleField = ({ label, description, value, onChange }: {
-    label: string; description: string; value: boolean; onChange: (v: boolean) => void;
-  }) => (
-    <div className="flex items-start justify-between gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
-      <div>
-        <p className="text-sm font-bold text-gray-900">{label}</p>
-        <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{description}</p>
-      </div>
-      <button
-        type="button"
-        onClick={() => onChange(!value)}
-        className={`relative flex-shrink-0 w-12 h-6 rounded-full transition-colors ${value ? 'bg-indigo-600' : 'bg-gray-200'}`}
-      >
-        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${value ? 'translate-x-6' : ''}`} />
-      </button>
-    </div>
-  );
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-12">
