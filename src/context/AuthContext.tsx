@@ -38,7 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!userDoc.exists()) {
       const newProfile = {
         email: firebaseUser.email || '',
-        displayName: firebaseUser.displayName || 'Generic User',
+        displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
         role: isAdminEmail ? 'admin' : 'customer',
         status: isAdminEmail ? 'approved' : 'pending',
         createdAt: serverTimestamp(),

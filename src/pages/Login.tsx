@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase';
 import { Navigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -22,18 +22,81 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+const friendlyError = (code: string) => {
+  const map: Record<string, string> = {
+    'auth/invalid-email':            'Invalid email address.',
+    'auth/user-not-found':           'No account found with this email.',
+    'auth/wrong-password':           'Incorrect password.',
+    'auth/invalid-credential':       'Incorrect email or password.',
+    'auth/email-already-in-use':     'An account with this email already exists.',
+    'auth/weak-password':            'Password must be at least 8 characters.',
+    'auth/too-many-requests':        'Too many attempts. Try again later.',
+    'auth/network-request-failed':   'Network error. Check your connection.',
+  };
+  return map[code] ?? 'Something went wrong. Please try again.';
+};
+
 const Login: React.FC = () => {
   const { user, loading } = useAuth();
-  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'protection' | 'cards' | 'yield'>('protection');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>('signin');
 
-  const handleGoogleLogin = async () => {
-    const provider = new GoogleAuthProvider();
+  // Form fields
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setAuthLoading(true);
     try {
-      await signInWithPopup(auth, provider);
+      await signInWithEmailAndPassword(auth, email, password);
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.code));
+    } finally {
+      setAuthLoading(false);
     }
+  };
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    if (!name.trim()) { setError('Full name is required.'); return; }
+    setAuthLoading(true);
+    try {
+      const credential = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(credential.user, { displayName: name.trim() });
+    } catch (err: any) {
+      setError(friendlyError(err.code));
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setAuthLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetSent(true);
+    } catch (err: any) {
+      setError(friendlyError(err.code));
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const switchMode = (m: 'signin' | 'signup' | 'reset') => {
+    setMode(m); setError(null); setResetSent(false);
+    setName(''); setEmail(''); setPassword(''); setConfirmPassword('');
   };
 
   if (loading) return null;
@@ -238,37 +301,94 @@ const Login: React.FC = () => {
 
           {/* Right Column: Portal Login Card */}
           <div id="signin" className="lg:col-span-5 md:max-w-md md:mx-auto lg:w-full">
-            <div className="bg-white p-8 sm:p-10 rounded-[2.5rem] shadow-xl shadow-gray-200/40 border border-gray-100 flex flex-col justify-between">
-              
+            <div className="bg-white p-8 sm:p-10 rounded-[2.5rem] shadow-xl shadow-gray-200/40 border border-gray-100 flex flex-col gap-6">
+
+              {/* Mode tabs */}
               <div>
-                <h3 className="text-2xl font-black text-gray-950 tracking-tight text-center mb-1">Access Portal</h3>
-                <p className="text-center text-xs font-bold text-gray-400 uppercase tracking-widest mb-8">
-                  Authenticate below to start
+                <h3 className="text-2xl font-black text-gray-950 tracking-tight text-center mb-1">
+                  {mode === 'signin' ? 'Sign In' : mode === 'signup' ? 'Create Account' : 'Reset Password'}
+                </h3>
+                <p className="text-center text-xs font-bold text-gray-400 uppercase tracking-widest">
+                  {mode === 'signin' ? 'Welcome back' : mode === 'signup' ? 'Open your account' : 'Enter your email'}
                 </p>
-
-                <button
-                  onClick={handleGoogleLogin}
-                  className="w-full h-14 bg-white border-2 border-gray-100 hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-50/50 text-gray-800 font-bold rounded-2xl flex items-center justify-center gap-3 transition-all group active:scale-95"
-                >
-                  <img 
-                    src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" 
-                    alt="Google" 
-                    className="w-5 h-5"
-                    referrerPolicy="no-referrer"
-                  />
-                  Continue with Google
-                  <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
-                </button>
-
-                {error && (
-                  <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 font-semibold text-center">
-                    {error}
-                  </div>
-                )}
               </div>
 
-              {/* Interactive Security Trust Badges */}
-              <div className="mt-10 pt-8 border-t border-gray-50">
+              <AnimatePresence mode="wait">
+                {/* ── Reset Password ── */}
+                {mode === 'reset' && (
+                  <motion.form key="reset" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}
+                    onSubmit={handleReset} className="space-y-4">
+                    {resetSent ? (
+                      <div className="p-4 bg-green-50 border border-green-100 rounded-2xl text-xs text-green-700 font-semibold text-center">
+                        Reset link sent — check your inbox.
+                      </div>
+                    ) : (
+                      <>
+                        <input type="email" required placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)}
+                          className="w-full h-12 px-4 bg-gray-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-xl text-sm font-semibold text-gray-900 placeholder:text-gray-400 outline-none transition-all" />
+                        {error && <p className="text-xs text-red-600 font-semibold">{error}</p>}
+                        <button type="submit" disabled={authLoading}
+                          className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2">
+                          {authLoading ? 'Sending…' : 'Send Reset Link'}
+                        </button>
+                      </>
+                    )}
+                    <button type="button" onClick={() => switchMode('signin')}
+                      className="w-full text-xs text-indigo-600 hover:underline font-bold text-center">
+                      ← Back to Sign In
+                    </button>
+                  </motion.form>
+                )}
+
+                {/* ── Sign In ── */}
+                {mode === 'signin' && (
+                  <motion.form key="signin" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}
+                    onSubmit={handleSignIn} className="space-y-3">
+                    <input type="email" required placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)}
+                      className="w-full h-12 px-4 bg-gray-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-xl text-sm font-semibold text-gray-900 placeholder:text-gray-400 outline-none transition-all" />
+                    <input type="password" required placeholder="Password" value={password} onChange={e => setPassword(e.target.value)}
+                      className="w-full h-12 px-4 bg-gray-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-xl text-sm font-semibold text-gray-900 placeholder:text-gray-400 outline-none transition-all" />
+                    {error && <p className="text-xs text-red-600 font-semibold">{error}</p>}
+                    <button type="submit" disabled={authLoading}
+                      className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-100">
+                      {authLoading ? 'Signing in…' : <><span>Sign In</span><ArrowRight className="w-4 h-4" /></>}
+                    </button>
+                    <div className="flex items-center justify-between pt-1">
+                      <button type="button" onClick={() => switchMode('reset')}
+                        className="text-xs text-gray-400 hover:text-indigo-600 font-semibold">Forgot password?</button>
+                      <button type="button" onClick={() => switchMode('signup')}
+                        className="text-xs text-indigo-600 hover:underline font-bold">Create account →</button>
+                    </div>
+                  </motion.form>
+                )}
+
+                {/* ── Sign Up ── */}
+                {mode === 'signup' && (
+                  <motion.form key="signup" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}
+                    onSubmit={handleSignUp} className="space-y-3">
+                    <input type="text" required placeholder="Full legal name" value={name} onChange={e => setName(e.target.value)}
+                      className="w-full h-12 px-4 bg-gray-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-xl text-sm font-semibold text-gray-900 placeholder:text-gray-400 outline-none transition-all" />
+                    <input type="email" required placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)}
+                      className="w-full h-12 px-4 bg-gray-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-xl text-sm font-semibold text-gray-900 placeholder:text-gray-400 outline-none transition-all" />
+                    <input type="password" required placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)}
+                      className="w-full h-12 px-4 bg-gray-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-xl text-sm font-semibold text-gray-900 placeholder:text-gray-400 outline-none transition-all" />
+                    <input type="password" required placeholder="Confirm password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                      className="w-full h-12 px-4 bg-gray-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-xl text-sm font-semibold text-gray-900 placeholder:text-gray-400 outline-none transition-all" />
+                    {error && <p className="text-xs text-red-600 font-semibold">{error}</p>}
+                    <button type="submit" disabled={authLoading}
+                      className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-100">
+                      {authLoading ? 'Creating account…' : 'Create Account'}
+                    </button>
+                    <button type="button" onClick={() => switchMode('signin')}
+                      className="w-full text-xs text-gray-400 hover:text-indigo-600 font-semibold text-center">
+                      Already have an account? Sign in →
+                    </button>
+                  </motion.form>
+                )}
+              </AnimatePresence>
+
+              {/* Trust badges */}
+              <div className="pt-4 border-t border-gray-50">
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div>
                     <p className="text-lg font-black text-gray-900 font-mono">256-bit</p>
@@ -287,15 +407,12 @@ const Login: React.FC = () => {
                 </div>
               </div>
 
-              {/* Quick Advisory Box */}
-              <div className="mt-6 p-4 bg-amber-50/40 rounded-2xl border border-amber-100/50 flex gap-3 text-amber-900">
-                <Info className="w-4 h-4 text-amber-600 shrink-0" />
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-tight text-amber-800">Security Advisory</p>
-                  <p className="text-[10px] mt-0.5 font-medium leading-relaxed text-amber-700">
-                    CentraBank customer service will never ask you for credentials, verification OTPs, or to make emergency transfers over SMS/email.
-                  </p>
-                </div>
+              {/* Security advisory */}
+              <div className="p-4 bg-amber-50/40 rounded-2xl border border-amber-100/50 flex gap-3 text-amber-900">
+                <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-[10px] font-medium leading-relaxed text-amber-700">
+                  CentraBank will never ask for your password, OTPs, or emergency transfers via SMS/email.
+                </p>
               </div>
 
             </div>
