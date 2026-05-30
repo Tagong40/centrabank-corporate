@@ -148,7 +148,7 @@ const Transfer: React.FC = () => {
           toAccountNumber: toAccount,
           amount: transferAmount,
           description: txDescription,
-          status: 'completed',
+          status: transferType === 'external' ? 'pending' : 'completed',
           type: transferType,
           speed: transferType === 'external' ? transferSpeed : 'instant',
           routingNumber: transferType === 'external' ? routingNumber : '021000021',

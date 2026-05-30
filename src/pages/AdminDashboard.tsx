@@ -41,6 +41,30 @@ const ConfirmModal = ({ title, message, onConfirm, onCancel }: {
   </div>
 );
 
+const TX_STATUS_STYLES: Record<string, string> = {
+  pending:        'bg-amber-50 text-amber-700 border-amber-100',
+  on_hold:        'bg-orange-50 text-orange-700 border-orange-100',
+  fraud_detected: 'bg-red-100 text-red-800 border-red-200',
+  completed:      'bg-green-50 text-green-700 border-green-100',
+  failed:         'bg-red-50 text-red-600 border-red-100',
+  rejected:       'bg-gray-100 text-gray-600 border-gray-200',
+};
+
+const TX_STATUS_LABELS: Record<string, string> = {
+  pending:        'Pending',
+  on_hold:        'On Hold',
+  fraud_detected: 'Fraud Detected',
+  completed:      'Approved',
+  failed:         'Failed',
+  rejected:       'Rejected',
+};
+
+const TxStatusBadge = ({ status }: { status: string }) => (
+  <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${TX_STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+    {TX_STATUS_LABELS[status] ?? status}
+  </span>
+);
+
 const AdminDashboard: React.FC = () => {
   const { profile: currentAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<'users' | 'transactions'>('users');
@@ -133,67 +157,53 @@ const AdminDashboard: React.FC = () => {
     });
   };
 
+  const TERMINAL_STATUSES = ['completed', 'failed', 'rejected'];
+
   const handleTransactionStatusChange = async (tx: Transaction, newStatus: Transaction['status']) => {
     if (tx.status === newStatus) return;
+    if (TERMINAL_STATUSES.includes(tx.status)) {
+      alert("This transaction is already finalised and cannot be changed.");
+      return;
+    }
 
     try {
       await runTransaction(db, async (firebaseTx) => {
         const txRef = doc(db, 'transactions', tx.id);
         const freshTxSnap = await firebaseTx.get(txRef);
-        if (!freshTxSnap.exists()) {
-          throw new Error("Transaction record not found.");
-        }
+        if (!freshTxSnap.exists()) throw new Error("Transaction record not found.");
         const freshTx = freshTxSnap.data() as Transaction;
         const currentStatus = freshTx.status || 'pending';
+        if (currentStatus === newStatus) return;
+        if (TERMINAL_STATUSES.includes(currentStatus)) throw new Error("Transaction is already finalised.");
 
-        if (currentStatus === newStatus) return; // already in this state
+        const isTopup = freshTx.type === 'topup' || freshTx.fromAccountId === 'external';
+        const isTerminalNew = TERMINAL_STATUSES.includes(newStatus);
 
-        // We only allow transitions out of 'pending' to avoid double-processing balances!
-        if (currentStatus !== 'pending') {
-          throw new Error("Only pending transactions can have their authorization states modified.");
-        }
-
-        // Apply balance adjustments based on transition:
-        if (freshTx.type === 'topup' || freshTx.fromAccountId === 'external') {
-          // Deposit / Top up
-          if (newStatus === 'completed') {
-            // Add the money to the destination account
-            const accountId = freshTx.toAccountId;
-            const accountRef = doc(db, 'accounts', accountId);
+        if (isTerminalNew) {
+          if (isTopup && newStatus === 'completed') {
+            // Credit the destination account
+            const accountRef = doc(db, 'accounts', freshTx.toAccountId);
             const accountSnap = await firebaseTx.get(accountRef);
-            if (!accountSnap.exists()) {
-              throw new Error("Target bank account for top-up does not exist.");
-            }
-            const currentBalance = accountSnap.data().balance || 0;
+            if (!accountSnap.exists()) throw new Error("Target account not found.");
             firebaseTx.update(accountRef, {
-              balance: currentBalance + freshTx.amount,
-              lastTransactionId: freshTxSnap.id
+              balance: (accountSnap.data().balance || 0) + freshTx.amount,
+              lastTransactionId: freshTxSnap.id,
             });
-          }
-          // If rejected/failed, no change in balance (since topup didn't add funds yet).
-        } else {
-          // Withdrawal or outbound transfer where money was already deducted on pending creation.
-          // Since the money was deducted at creation, if it is rejected or failed, we must refund the user!
-          if (newStatus === 'rejected' || newStatus === 'failed') {
-            const accountId = freshTx.fromAccountId;
-            const accountRef = doc(db, 'accounts', accountId);
+          } else if (!isTopup && (newStatus === 'rejected' || newStatus === 'failed')) {
+            // Refund the sender — money was already deducted at creation
+            const accountRef = doc(db, 'accounts', freshTx.fromAccountId);
             const accountSnap = await firebaseTx.get(accountRef);
             if (accountSnap.exists()) {
-              const currentBalance = accountSnap.data().balance || 0;
               firebaseTx.update(accountRef, {
-                balance: currentBalance + freshTx.amount,
-                lastTransactionId: freshTxSnap.id
+                balance: (accountSnap.data().balance || 0) + freshTx.amount,
+                lastTransactionId: freshTxSnap.id,
               });
             }
           }
-          // If completed, the hold is confirmed. No balance adjustment.
         }
+        // Non-terminal status changes (pending ↔ on_hold ↔ fraud_detected) require no balance adjustment.
 
-        // Update the transaction status and date updated
-        firebaseTx.update(txRef, {
-          status: newStatus,
-          processedAt: serverTimestamp(),
-        });
+        firebaseTx.update(txRef, { status: newStatus, processedAt: serverTimestamp() });
       });
     } catch (err: any) {
       console.error("Failed to update transaction status:", err);
@@ -433,37 +443,26 @@ const AdminDashboard: React.FC = () => {
                                         {tx.timestamp?.toDate().toLocaleDateString()}
                                     </td>
                                     <td className="p-6">
-                                        <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${
-                                            tx.status === 'pending' || !tx.status ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                                            tx.status === 'completed' ? 'bg-green-50 text-green-700 border-green-100' :
-                                            tx.status === 'failed' ? 'bg-red-50 text-red-700 border-red-100' :
-                                            'bg-gray-100 text-gray-600 border-gray-200'
-                                        }`}>
-                                            {tx.status || 'pending'}
-                                        </span>
+                                        <TxStatusBadge status={tx.status} />
                                     </td>
                                     <td className="p-6">
-                                        {(tx.status === 'pending' || !tx.status) ? (
-                                            <div className="flex gap-2">
-                                                <button 
-                                                    onClick={() => handleTransactionStatusChange(tx, 'completed')}
-                                                    className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-all border border-transparent hover:border-green-100"
-                                                    title="Approve Settlement"
-                                                >
-                                                    <CheckCircle className="w-5 h-5" />
-                                                </button>
-                                                <button 
-                                                    onClick={() => handleTransactionStatusChange(tx, 'rejected')}
-                                                    className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-100"
-                                                    title="Reject Settlement"
-                                                >
-                                                    <XCircle className="w-5 h-5" />
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic flex items-center gap-1.5">
-                                                <Shield className="w-3.5 h-3.5 text-gray-300" /> Lock
+                                        {TERMINAL_STATUSES.includes(tx.status) ? (
+                                            <span className="text-xs font-bold text-gray-300 uppercase tracking-widest italic flex items-center gap-1.5">
+                                                <Shield className="w-3.5 h-3.5 text-gray-200" /> Finalised
                                             </span>
+                                        ) : (
+                                            <select
+                                                value={tx.status || 'pending'}
+                                                onChange={e => handleTransactionStatusChange(tx, e.target.value as Transaction['status'])}
+                                                className="text-[11px] font-bold uppercase tracking-wide rounded-xl border border-gray-200 px-3 py-2 bg-white focus:border-indigo-500 outline-none cursor-pointer hover:border-indigo-300 transition-colors"
+                                            >
+                                                <option value="pending">Pending</option>
+                                                <option value="on_hold">On Hold</option>
+                                                <option value="fraud_detected">Fraud Detected</option>
+                                                <option value="completed">Approve</option>
+                                                <option value="failed">Failed</option>
+                                                <option value="rejected">Rejected</option>
+                                            </select>
                                         )}
                                     </td>
                                 </tr>

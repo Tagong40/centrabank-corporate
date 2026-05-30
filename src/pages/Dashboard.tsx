@@ -371,12 +371,14 @@ const Dashboard: React.FC = () => {
                             </p>
                             {tx.status && (
                               <span className={`inline-flex items-center px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider rounded border ${
-                                tx.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                                tx.status === 'completed' ? 'bg-green-50 text-green-700 border-green-100' :
-                                tx.status === 'failed' ? 'bg-red-50 text-red-700 border-red-100' :
+                                tx.status === 'pending'        ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                tx.status === 'on_hold'        ? 'bg-orange-50 text-orange-700 border-orange-100' :
+                                tx.status === 'fraud_detected' ? 'bg-red-100 text-red-800 border-red-200' :
+                                tx.status === 'completed'      ? 'bg-green-50 text-green-700 border-green-100' :
+                                tx.status === 'failed'         ? 'bg-red-50 text-red-600 border-red-100' :
                                 'bg-gray-100 text-gray-600 border-gray-200'
                               }`}>
-                                {tx.status}
+                                {tx.status === 'on_hold' ? 'On Hold' : tx.status === 'fraud_detected' ? 'Fraud Detected' : tx.status === 'completed' ? 'Approved' : tx.status}
                               </span>
                             )}
                           </div>

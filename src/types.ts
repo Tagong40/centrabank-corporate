@@ -52,7 +52,7 @@ export interface Transaction {
   toAccountNumber: string;
   amount: number;
   description: string;
-  status: 'pending' | 'completed' | 'failed' | 'rejected';
+  status: 'pending' | 'on_hold' | 'fraud_detected' | 'completed' | 'failed' | 'rejected';
   type?: 'internal' | 'external' | 'topup';
   timestamp: any;
   paymentMethod?: string;
