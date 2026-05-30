@@ -169,22 +169,22 @@ export default function VaultDepositBox() {
     <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-sm space-y-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-50 pb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
+      <div className="flex items-center justify-between gap-4 border-b border-gray-50 pb-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center flex-shrink-0">
             <ShieldCheck className="w-5 h-5" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className="text-base font-black text-gray-900 uppercase tracking-tight">Physical Asset Vault</h3>
-            <p className="text-[10px] text-gray-400 font-bold tracking-wider uppercase">Insured Custody — Real-Time Market Valuation</p>
+            <p className="text-[10px] text-gray-400 font-bold tracking-wider uppercase truncate">Insured Custody · Live Market Valuation</p>
           </div>
         </div>
         {!isDepositing && (
           <button
             onClick={() => { setIsDepositing(true); setFormError(null); }}
-            className="flex items-center gap-1 bg-gray-900 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider py-2 px-3.5 rounded-xl transition-all"
+            className="flex-shrink-0 flex items-center gap-1.5 bg-gray-900 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider py-2 px-4 rounded-xl transition-all"
           >
-            <Plus className="w-3.5 h-3.5" /> Deposit Asset
+            <Plus className="w-3.5 h-3.5" /> Deposit
           </button>
         )}
       </div>
