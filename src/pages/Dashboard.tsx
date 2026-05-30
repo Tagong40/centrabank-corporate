@@ -120,7 +120,7 @@ const Dashboard: React.FC = () => {
       userId: profile.uid,
       accountName: 'Primary Business Account',
       accountNumber: `CB-${Math.floor(Math.random() * 1000000000)}`,
-      balance: 5000, // Initial welcome balance for demo
+      balance: 0,
       currency: 'USD',
       createdAt: serverTimestamp(),
     };
