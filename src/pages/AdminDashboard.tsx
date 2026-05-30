@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { collection, query, orderBy, onSnapshot, doc, updateDoc, getDocs, where, runTransaction, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 import { UserProfile, Transaction, BankAccount } from '../types';
-import { Users, FileText, CheckCircle, XCircle, Clock, Shield, ExternalLink, Search, TrendingUp, ArrowUpRight, ArrowDownLeft, Coins, Trash2, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Users, FileText, CheckCircle, XCircle, Clock, Shield, ExternalLink, Search, TrendingUp, ArrowUpRight, ArrowDownLeft, Coins, Trash2, RotateCcw, AlertTriangle, UserCog } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 type ConfirmConfig = { title: string; message: string; onConfirm: () => void };
@@ -41,6 +42,7 @@ const ConfirmModal = ({ title, message, onConfirm, onCancel }: {
 );
 
 const AdminDashboard: React.FC = () => {
+  const { profile: currentAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<'users' | 'transactions'>('users');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -92,6 +94,26 @@ const AdminDashboard: React.FC = () => {
           await batch.commit();
         } catch (err: any) {
           console.error("Failed to delete user", err);
+        }
+      },
+    });
+  };
+
+  const handleToggleRole = (user: UserProfile) => {
+    const makingAdmin = user.role !== 'admin';
+    setConfirm({
+      title: makingAdmin ? 'Promote to Admin' : 'Remove Admin Role',
+      message: makingAdmin
+        ? `Grant ${user.displayName} full admin access? They will be able to manage all users and transactions.`
+        : `Remove admin privileges from ${user.displayName}? They will become a regular customer.`,
+      onConfirm: async () => {
+        try {
+          await updateDoc(doc(db, 'users', user.uid), {
+            role: makingAdmin ? 'admin' : 'customer',
+            status: makingAdmin ? 'approved' : 'approved',
+          });
+        } catch (err: any) {
+          console.error('Failed to toggle role', err);
         }
       },
     });
@@ -314,6 +336,18 @@ const AdminDashboard: React.FC = () => {
                                             </button>
                                         )}
                                         <div className="w-px h-5 bg-gray-100 mx-1" />
+                                        <button
+                                            onClick={() => handleToggleRole(user)}
+                                            disabled={user.uid === currentAdmin?.uid}
+                                            className={`p-2 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                                              user.role === 'admin'
+                                                ? 'text-indigo-500 hover:bg-indigo-50'
+                                                : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-500'
+                                            }`}
+                                            title={user.role === 'admin' ? 'Remove admin role' : 'Make admin'}
+                                        >
+                                            <UserCog className="w-4 h-4" />
+                                        </button>
                                         <button
                                             onClick={() => handleResetCompliance(user)}
                                             className="p-2 text-amber-500 hover:bg-amber-50 rounded-xl transition-all"
