@@ -36,11 +36,14 @@ service cloud.firestore {
                       request.resource.data.keys().size() == 5;
                       
       allow update: if isAdmin() ||
-                      (isSignedIn() && request.auth.uid == userId && 
+                      (isSignedIn() && request.auth.uid == userId &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                          'displayName', 'phoneNumber', 'address', 'cityName', 'country', 'postalCode',
                          'companyName', 'taxId', 'twoFactorEnabled', 'securityPINCode', 'dailyTransferLimit',
-                         'ipWhitelist', 'preferredLanguage'
+                         'ipWhitelist', 'preferredLanguage',
+                         'onboardingCompleted', 'businessType', 'industry', 'purposeOfAccount',
+                         'expectedMonthlyVolume', 'sourceOfFunds', 'isPEP', 'isUSPerson',
+                         'agreedToTerms', 'agreedToAML'
                        ]));
     }
 

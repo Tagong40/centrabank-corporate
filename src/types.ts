@@ -20,6 +20,17 @@ export interface UserProfile {
   dailyTransferLimit?: number;
   ipWhitelist?: string;
   preferredLanguage?: string;
+  // Compliance / KYC onboarding
+  onboardingCompleted?: boolean;
+  businessType?: string;
+  industry?: string;
+  purposeOfAccount?: string;
+  expectedMonthlyVolume?: string;
+  sourceOfFunds?: string;
+  isPEP?: boolean;
+  isUSPerson?: boolean;
+  agreedToTerms?: boolean;
+  agreedToAML?: boolean;
 }
 
 export interface BankAccount {

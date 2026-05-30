@@ -10,10 +10,11 @@ import Cards from './pages/Cards';
 import Investments from './pages/Investments';
 import Resources from './pages/Resources';
 import Settings from './pages/Settings';
+import Onboarding from './pages/Onboarding';
 import CookieBanner from './components/CookieBanner';
 
 const ProtectedRoute = ({ children, requireAdmin = false }: { children: React.ReactNode, requireAdmin?: boolean }) => {
-  const { user, profile, loading, isAdmin } = useAuth();
+  const { user, loading, isAdmin, needsOnboarding } = useAuth();
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -22,6 +23,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: { children: React.Re
   );
 
   if (!user) return <Navigate to="/login" />;
+  if (needsOnboarding) return <Navigate to="/onboarding" />;
   if (requireAdmin && !isAdmin) return <Navigate to="/" />;
 
   return <>{children}</>;
@@ -36,6 +38,7 @@ export default function App() {
           <main className="flex-1">
             <Routes>
               <Route path="/login" element={<Login />} />
+              <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/resources" element={<Resources />} />
               <Route 
                 path="/" 
