@@ -1,187 +1,327 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp, deleteDoc, runTransaction } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, Lock, Unlock, HelpCircle, Key, KeyRound, Sparkles, FolderLock, Plus, Info, Check, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import {
+  Plus, TrendingUp, TrendingDown, ShieldCheck, Gem, Coins,
+  Package, KeyRound, Loader2, BarChart3, AlertCircle
+} from 'lucide-react';
 
-interface DepositBox {
+// ─── Asset catalog ────────────────────────────────────────────────────────────
+const ASSET_CATALOG = [
+  { type: 'Gold',          category: 'Precious Metal', basePrice: 3250,  unit: 'oz'     },
+  { type: 'Silver',        category: 'Precious Metal', basePrice: 35,    unit: 'oz'     },
+  { type: 'Platinum',      category: 'Precious Metal', basePrice: 1020,  unit: 'oz'     },
+  { type: 'Palladium',     category: 'Precious Metal', basePrice: 1080,  unit: 'oz'     },
+  { type: 'Diamond',       category: 'Gemstone',       basePrice: 5200,  unit: 'carat'  },
+  { type: 'Emerald',       category: 'Gemstone',       basePrice: 2100,  unit: 'carat'  },
+  { type: 'Ruby',          category: 'Gemstone',       basePrice: 2500,  unit: 'carat'  },
+  { type: 'Sapphire',      category: 'Gemstone',       basePrice: 1800,  unit: 'carat'  },
+  { type: 'Fine Art',      category: 'Collectible',    basePrice: 75000, unit: 'piece'  },
+  { type: 'Vintage Watch', category: 'Collectible',    basePrice: 22000, unit: 'piece'  },
+  { type: 'Rare Coin',     category: 'Collectible',    basePrice: 1500,  unit: 'piece'  },
+  { type: 'Wine Collection', category: 'Collectible',  basePrice: 800,   unit: 'bottle' },
+];
+
+type MarketPrices = Record<string, { price: number; change: number }>;
+
+function generateMarketPrices(): MarketPrices {
+  const t = Date.now() / 60000;
+  return Object.fromEntries(
+    ASSET_CATALOG.map(({ type, basePrice }) => {
+      const seed = type.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+      const change = Math.sin(t * 0.11 + seed) * 1.4 + Math.cos(t * 0.073 + seed * 1.3) * 0.7;
+      return [type, { price: basePrice * (1 + change / 100), change }];
+    })
+  );
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface VaultAsset {
   id: string;
   userId: string;
-  label: string;
-  secretPIN: string;
-  secureContent: string;
+  name: string;
+  assetType: string;
+  category: string;
+  quantity: number;
+  unit: string;
+  depositedValuePerUnit: number;
   insuranceTier: string;
-  status: 'locked' | 'unlocked';
+  secretPIN: string;
+  notes: string;
   createdAt: any;
 }
 
+// ─── Sub-components (module scope — no remount on re-render) ──────────────────
+const CategoryIcon = ({ category }: { category: string }) => {
+  if (category === 'Precious Metal') return <Coins className="w-4 h-4" />;
+  if (category === 'Gemstone') return <Gem className="w-4 h-4" />;
+  return <Package className="w-4 h-4" />;
+};
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function VaultDepositBox() {
   const { profile } = useAuth();
-  const [boxes, setBoxes] = useState<DepositBox[]>([]);
+  const [assets, setAssets] = useState<VaultAsset[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Creation States
-  const [isOpeningForm, setIsOpeningForm] = useState(false);
-  const [label, setLabel] = useState('');
+  const [marketPrices, setMarketPrices] = useState<MarketPrices>(generateMarketPrices);
+
+  // Deposit form
+  const [isDepositing, setIsDepositing] = useState(false);
+  const [assetType, setAssetType] = useState('Gold');
+  const [assetName, setAssetName] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [insuranceTier, setInsuranceTier] = useState("$100,000 Lloyd's Insured");
   const [pin, setPin] = useState('');
-  const [content, setContent] = useState('');
-  const [insurance, setInsurance] = useState('$100,000 Lloyd\'s Insured');
+  const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  // Keypad States
-  const [selectedBoxForUnlock, setSelectedBoxForUnlock] = useState<DepositBox | null>(null);
-  const [enteredPin, setEnteredPin] = useState('');
-  const [keypadError, setKeypadError] = useState(false);
-  
-  // Selected Unlocked Content Display States
-  const [unlockedContent, setUnlockedContent] = useState<{[key: string]: boolean}>({});
+  // Vacate (withdraw) PIN modal
+  const [vacatingAsset, setVacatingAsset] = useState<VaultAsset | null>(null);
+  const [vacatePin, setVacatePin] = useState('');
+  const [vacatePinError, setVacatePinError] = useState(false);
 
+  // Refresh market prices every 30 s
+  useEffect(() => {
+    const id = setInterval(() => setMarketPrices(generateMarketPrices()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Load assets
   useEffect(() => {
     if (!profile) return;
-
     const q = query(collection(db, 'deposit_boxes'), where('userId', '==', profile.uid));
-    const unsub = onSnapshot(q, (snapshot) => {
-      setBoxes(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as DepositBox)));
-      setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'deposit_boxes'));
-
+    const unsub = onSnapshot(
+      q,
+      snap => {
+        setAssets(snap.docs.map(d => ({ id: d.id, ...d.data() } as VaultAsset)));
+        setLoading(false);
+      },
+      err => handleFirestoreError(err, OperationType.LIST, 'deposit_boxes')
+    );
     return () => unsub();
   }, [profile]);
 
-  const handleCreateBox = async (e: React.FormEvent) => {
+  const catalogItem = ASSET_CATALOG.find(a => a.type === assetType)!;
+  const estimatedPrice = marketPrices[assetType]?.price ?? catalogItem.basePrice;
+  const estimatedTotal = parseFloat(quantity || '0') * estimatedPrice;
+
+  const handleDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile || pin.length < 4) return;
+    if (!profile || pin.length < 4) { setFormError('PIN must be exactly 4 digits.'); return; }
+    if (!quantity || parseFloat(quantity) <= 0) { setFormError('Enter a valid quantity.'); return; }
+    setFormError(null);
     setSubmitting(true);
-
     try {
-      const boxId = `BOX-${Math.floor(Math.random() * 1000000)}`;
-      await setDoc(doc(db, 'deposit_boxes', boxId), {
+      const id = `VAULT-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
+      await setDoc(doc(db, 'deposit_boxes', id), {
         userId: profile.uid,
-        label,
+        name: assetName.trim() || `${quantity} ${catalogItem.unit} of ${assetType}`,
+        assetType,
+        category: catalogItem.category,
+        quantity: parseFloat(quantity),
+        unit: catalogItem.unit,
+        depositedValuePerUnit: estimatedPrice,
+        insuranceTier,
         secretPIN: pin,
-        secureContent: content,
-        insuranceTier: insurance,
-        status: 'locked',
-        createdAt: serverTimestamp()
+        notes: notes.trim(),
+        createdAt: serverTimestamp(),
       });
-
-      setLabel('');
-      setPin('');
-      setContent('');
-      setIsOpeningForm(false);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to allocate vault deposit box.");
+      setAssetType('Gold'); setAssetName(''); setQuantity('');
+      setPin(''); setNotes(''); setIsDepositing(false);
+    } catch (err: any) {
+      setFormError(err.message || 'Failed to deposit asset.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleUnlockAttempt = (digit: string) => {
-    if (enteredPin.length >= 4) return;
-    const newPin = enteredPin + digit;
-    setEnteredPin(newPin);
-    setKeypadError(false);
-
-    if (newPin.length === 4) {
-      if (selectedBoxForUnlock && selectedBoxForUnlock.secretPIN === newPin) {
-        // Success
-        setUnlockedContent(prev => ({ ...prev, [selectedBoxForUnlock.id]: true }));
-        setEnteredPin('');
-        setSelectedBoxForUnlock(null);
+  const handleVacateDigit = (digit: string) => {
+    if (vacatePin.length >= 4) return;
+    const next = vacatePin + digit;
+    setVacatePin(next);
+    setVacatePinError(false);
+    if (next.length === 4) {
+      if (vacatingAsset?.secretPIN === next) {
+        deleteDoc(doc(db, 'deposit_boxes', vacatingAsset.id))
+          .then(() => { setVacatingAsset(null); setVacatePin(''); })
+          .catch(console.error);
       } else {
-        // Fail
-        setTimeout(() => {
-          setKeypadError(true);
-          setEnteredPin('');
-        }, 200);
+        setTimeout(() => { setVacatePinError(true); setVacatePin(''); }, 220);
       }
     }
   };
 
-  const handleLockBox = (boxId: string) => {
-    setUnlockedContent(prev => ({ ...prev, [boxId]: false }));
-  };
-
-  const handleDeleteBox = async (boxId: string) => {
-    if (!window.confirm("Are you sure you want to permanently destroy and vacate this deposit box? Stored secrets will be cleared.")) return;
-    try {
-      await deleteDoc(doc(db, 'deposit_boxes', boxId));
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  // Portfolio totals
+  const totalCurrentValue = assets.reduce((sum, a) => {
+    const price = marketPrices[a.assetType]?.price ?? a.depositedValuePerUnit;
+    return sum + a.quantity * price;
+  }, 0);
+  const totalDepositedValue = assets.reduce((sum, a) => sum + a.quantity * a.depositedValuePerUnit, 0);
+  const totalGain = totalCurrentValue - totalDepositedValue;
+  const totalGainPct = totalDepositedValue > 0 ? (totalGain / totalDepositedValue) * 100 : 0;
 
   if (loading) return null;
 
   return (
     <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-sm space-y-6">
-      
-      {/* Vault Header */}
+
+      {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-50 pb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
-            <FolderLock className="w-5 h-5 animate-pulse" />
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
+            <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-base font-black text-gray-900 uppercase tracking-tight">Security Deposit Boxes</h3>
-            <p className="text-[10px] text-gray-400 font-bold tracking-wider uppercase">Cryptographically Secure Ledger Vaults</p>
+            <h3 className="text-base font-black text-gray-900 uppercase tracking-tight">Physical Asset Vault</h3>
+            <p className="text-[10px] text-gray-400 font-bold tracking-wider uppercase">Insured Custody — Real-Time Market Valuation</p>
           </div>
         </div>
-
-        {!isOpeningForm && (
+        {!isDepositing && (
           <button
-            onClick={() => setIsOpeningForm(true)}
-            className="flex items-center gap-1 bg-gray-900 hover:bg-indigo-650 hover:shadow-md hover:shadow-indigo-50 text-white text-[10px] font-black uppercase tracking-wider py-2 px-3.5 rounded-xl transition-all"
+            onClick={() => { setIsDepositing(true); setFormError(null); }}
+            className="flex items-center gap-1 bg-gray-900 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider py-2 px-3.5 rounded-xl transition-all"
           >
-            <Plus className="w-3.5 h-3.5" />
-            Allocate Box
+            <Plus className="w-3.5 h-3.5" /> Deposit Asset
           </button>
         )}
       </div>
 
-      <AnimatePresence mode="wait">
-        {isOpeningForm ? (
+      {/* Portfolio summary */}
+      {assets.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+            <p className="text-[9px] font-black text-gray-400 uppercase tracking-wider mb-1">Holdings</p>
+            <p className="text-lg font-black text-gray-900">{assets.length}</p>
+            <p className="text-[9px] text-gray-400">Asset{assets.length !== 1 ? 's' : ''}</p>
+          </div>
+          <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+            <p className="text-[9px] font-black text-gray-400 uppercase tracking-wider mb-1">Current Value</p>
+            <p className="text-lg font-black text-gray-900">${totalCurrentValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+            <p className="text-[9px] text-gray-400">Live market</p>
+          </div>
+          <div className={`rounded-2xl p-4 border ${totalGain >= 0 ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+            <p className="text-[9px] font-black text-gray-400 uppercase tracking-wider mb-1">Unrealized P&L</p>
+            <p className={`text-lg font-black ${totalGain >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+              {totalGain >= 0 ? '+' : '-'}${Math.abs(totalGain).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+            </p>
+            <p className={`text-[9px] font-bold flex items-center gap-0.5 ${totalGain >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+              {totalGain >= 0 ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+              {totalGain >= 0 ? '+' : ''}{totalGainPct.toFixed(2)}%
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Market prices ticker */}
+      <div className="bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-2">
+          <BarChart3 className="w-3.5 h-3.5 text-indigo-500" />
+          <span className="text-[9px] font-black text-gray-500 uppercase tracking-wider">Live Spot Prices</span>
+          <span className="ml-auto text-[9px] text-gray-300 font-medium">Refreshes every 30s</span>
+        </div>
+        <div className="flex overflow-x-auto divide-x divide-gray-100">
+          {ASSET_CATALOG.slice(0, 6).map(({ type, unit }) => {
+            const m = marketPrices[type];
+            const up = (m?.change ?? 0) >= 0;
+            return (
+              <div key={type} className="flex-shrink-0 px-4 py-2.5 min-w-[120px]">
+                <p className="text-[9px] font-black text-gray-500 uppercase">{type}</p>
+                <p className="text-xs font-black text-gray-900 mt-0.5">
+                  ${m?.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <span className="text-[9px] text-gray-400 font-medium">/{unit}</span>
+                </p>
+                <p className={`text-[9px] font-bold flex items-center gap-0.5 ${up ? 'text-green-600' : 'text-red-500'}`}>
+                  {up ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+                  {up ? '+' : ''}{m?.change.toFixed(2)}%
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Deposit form */}
+      <AnimatePresence>
+        {isDepositing && (
           <motion.form
-            key="allocationForm"
+            key="deposit-form"
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            onSubmit={handleCreateBox}
+            onSubmit={handleDeposit}
             className="space-y-4 bg-gray-50 p-5 rounded-2xl border border-gray-150"
           >
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-xs font-black text-indigo-750 uppercase">Open Premium Vault Slot</span>
-              <button
-                type="button"
-                onClick={() => setIsOpeningForm(false)}
-                className="text-xs font-bold text-gray-400 hover:text-gray-600 uppercase"
-              >
-                Cancel
-              </button>
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-black text-gray-700 uppercase">Deposit Physical Asset</span>
+              <button type="button" onClick={() => { setIsDepositing(false); setFormError(null); }}
+                className="text-xs font-bold text-gray-400 hover:text-gray-600">Cancel</button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-[9px] font-black uppercase text-gray-400 tracking-wider mb-1">Box Label Identifier</label>
-                <input 
-                  type="text"
+                <label className="block text-[9px] font-black uppercase text-gray-400 tracking-wider mb-1">Asset Type</label>
+                <select
+                  value={assetType}
+                  onChange={e => setAssetType(e.target.value)}
+                  className="w-full bg-white border border-gray-200 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 font-bold text-xs text-gray-900 outline-none"
+                >
+                  {['Precious Metal', 'Gemstone', 'Collectible'].map(cat => (
+                    <optgroup key={cat} label={cat}>
+                      {ASSET_CATALOG.filter(a => a.category === cat).map(a => (
+                        <option key={a.type} value={a.type}>{a.type} (per {a.unit})</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[9px] font-black uppercase text-gray-400 tracking-wider mb-1">
+                  Quantity ({catalogItem.unit})
+                </label>
+                <input
+                  type="number"
                   required
-                  placeholder="e.g. BTC Seed Backups & Keycodes"
-                  value={label}
-                  onChange={e => setLabel(e.target.value)}
+                  min="0.001"
+                  step="any"
+                  placeholder={`e.g. 10`}
+                  value={quantity}
+                  onChange={e => setQuantity(e.target.value)}
                   className="w-full bg-white border border-gray-200 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 font-bold text-xs text-gray-900 outline-none"
                 />
               </div>
+            </div>
 
+            {/* Estimated deposit value */}
+            {parseFloat(quantity) > 0 && (
+              <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-2.5 flex items-center justify-between">
+                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Estimated Deposit Value</span>
+                <span className="text-sm font-black text-indigo-700">
+                  ${estimatedTotal.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-[9px] font-black uppercase text-gray-400 tracking-wider mb-1">4-Digit Master PIN Lock</label>
-                <input 
+                <label className="block text-[9px] font-black uppercase text-gray-400 tracking-wider mb-1">Description (Optional)</label>
+                <input
+                  type="text"
+                  placeholder={`e.g. Valcambi ${assetType} Bar`}
+                  value={assetName}
+                  onChange={e => setAssetName(e.target.value)}
+                  className="w-full bg-white border border-gray-200 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 font-bold text-xs text-gray-900 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] font-black uppercase text-gray-400 tracking-wider mb-1">Vault Access PIN (4 Digits)</label>
+                <input
                   type="password"
                   required
                   maxLength={4}
-                  placeholder="e.g. 5831 (Numbers Only)"
+                  placeholder="e.g. 7291"
                   pattern="[0-9]{4}"
                   value={pin}
                   onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
@@ -191,10 +331,10 @@ export default function VaultDepositBox() {
             </div>
 
             <div>
-              <label className="block text-[9px] font-black uppercase text-gray-400 tracking-wider mb-1">Vault Insurance Coverage (Included)</label>
+              <label className="block text-[9px] font-black uppercase text-gray-400 tracking-wider mb-1">Insurance Coverage</label>
               <select
-                value={insurance}
-                onChange={e => setInsurance(e.target.value)}
+                value={insuranceTier}
+                onChange={e => setInsuranceTier(e.target.value)}
                 className="w-full bg-white border border-gray-200 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 font-bold text-xs text-gray-900 outline-none"
               >
                 <option value="$100,000 Lloyd's Insured">$100,000 Lloyd's Sweep Vault Guarantee</option>
@@ -203,141 +343,105 @@ export default function VaultDepositBox() {
               </select>
             </div>
 
-            <div>
-              <label className="block text-[9px] font-black uppercase text-gray-400 tracking-wider mb-1">Secret Credentials / Contents to Retain</label>
-              <textarea 
-                required
-                rows={3}
-                placeholder="Type confidential wallet seed phrases, private lockbox combinations, contract addresses, or emergency instructions here..."
-                value={content}
-                onChange={e => setContent(e.target.value)}
-                className="w-full bg-white border border-gray-200 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 font-medium text-xs text-gray-900 outline-none"
-              />
-            </div>
-
-            <div className="flex gap-2 items-center bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
-              <Info className="w-4 h-4 text-indigo-600 shrink-0" />
-              <p className="text-[10px] text-indigo-800 leading-normal font-semibold">
-                CentraBank uses AES-256 equivalent end-point structures. We have no backend visibility to your vault PINs. If forgotten, contents cannot be restored.
+            {formError && (
+              <p className="text-xs text-red-600 font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" /> {formError}
               </p>
-            </div>
+            )}
 
             <button
               type="submit"
               disabled={submitting}
-              className="w-full h-11 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs tracking-tight uppercase rounded-xl transition-all"
+              className="w-full h-11 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-black text-xs tracking-wide uppercase rounded-xl transition-all flex items-center justify-center gap-2"
             >
-              {submitting ? 'Allocating Space...' : 'Register Secure Deposit Box'}
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm Asset Deposit'}
             </button>
           </motion.form>
-        ) : null}
+        )}
       </AnimatePresence>
 
-      {/* Vault Grid */}
-      {boxes.length === 0 ? (
+      {/* Asset grid */}
+      {assets.length === 0 ? (
         <div className="bg-gray-50/50 rounded-2xl p-8 text-center border-2 border-dashed border-gray-150">
-          <Key className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-          <h4 className="text-xs font-black text-gray-900 uppercase">Vaults Area Quiet</h4>
-          <p className="text-[11px] text-gray-400 mt-1">No security deposit boxes allocated to this account yet.</p>
+          <ShieldCheck className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+          <h4 className="text-xs font-black text-gray-900 uppercase">Vault is Empty</h4>
+          <p className="text-[11px] text-gray-400 mt-1">No physical assets deposited yet. Click "Deposit Asset" to begin.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {boxes.map(box => {
-            const isUnlocked = !!unlockedContent[box.id];
-            
+          {assets.map(asset => {
+            const marketData = marketPrices[asset.assetType];
+            const currentPrice = marketData?.price ?? asset.depositedValuePerUnit;
+            const currentTotal = currentPrice * asset.quantity;
+            const depositedTotal = asset.depositedValuePerUnit * asset.quantity;
+            const gain = currentTotal - depositedTotal;
+            const gainPct = depositedTotal > 0 ? (gain / depositedTotal) * 100 : 0;
+            const isUp = gain >= 0;
+
             return (
-              <div 
-                key={box.id}
-                className={`p-5 rounded-2xl border transition-all ${
-                  isUnlocked 
-                    ? 'bg-emerald-50/20 border-emerald-200' 
-                    : 'bg-gray-50/80 border-gray-150'
-                }`}
+              <motion.div key={asset.id} layout
+                className="p-5 rounded-2xl border border-gray-100 bg-gray-50/30 hover:border-indigo-100 hover:bg-indigo-50/10 transition-all"
               >
-                <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                      isUnlocked ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500'
-                    }`}>
-                      {isUnlocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                {/* Top row */}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
+                      <CategoryIcon category={asset.category} />
                     </div>
                     <div>
-                      <h4 className="text-xs font-black text-gray-900 leading-tight uppercase tracking-tight">
-                        {box.label}
-                      </h4>
+                      <p className="text-xs font-black text-gray-900 leading-tight">
+                        {asset.name || `${asset.assetType} Holdings`}
+                      </p>
                       <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">
-                        {box.insuranceTier}
+                        {asset.quantity} {asset.unit} · {asset.assetType}
                       </p>
                     </div>
                   </div>
-
-                  <button 
-                    onClick={() => handleDeleteBox(box.id)}
-                    className="text-[10px] font-bold text-red-500 hover:underline hover:text-red-700 transition"
+                  <button
+                    onClick={() => { setVacatingAsset(asset); setVacatePin(''); setVacatePinError(false); }}
+                    className="text-[10px] font-bold text-gray-300 hover:text-red-500 uppercase tracking-wider transition flex-shrink-0"
                   >
                     Vacate
                   </button>
                 </div>
 
-                <AnimatePresence mode="wait">
-                  {isUnlocked ? (
-                    <motion.div
-                      key="unlocked-content"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="space-y-3"
-                    >
-                      <div className="bg-white p-3 rounded-xl border border-emerald-100 font-mono text-xs text-gray-700 select-all overflow-x-auto whitespace-pre-wrap">
-                        {box.secureContent}
-                      </div>
-                      
-                      <div className="flex justify-between items-center pt-2">
-                        <span className="text-[9px] text-emerald-750 font-bold uppercase tracking-widest flex items-center gap-1">
-                          <ShieldCheck className="w-3.5 h-3.5" />
-                          Authorized Decryption Decrypt
-                        </span>
-                        <button
-                          onClick={() => handleLockBox(box.id)}
-                          className="px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-all"
-                        >
-                          Lock Vault Box
-                        </button>
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="locked"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="flex items-center justify-between pt-2"
-                    >
-                      <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest flex items-center gap-1">
-                        <Lock className="w-3.5 h-3.5" />
-                        Stored Encrypted
-                      </span>
-                      <button
-                        onClick={() => {
-                          setSelectedBoxForUnlock(box);
-                          setEnteredPin('');
-                          setKeypadError(false);
-                        }}
-                        className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-black uppercase tracking-wider rounded-lg shadow-sm transition-all"
-                      >
-                        <KeyRound className="w-3.5 h-3.5" />
-                        Enter Guard PIN
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+                {/* Value row */}
+                <div className="flex items-end justify-between pt-3 border-t border-gray-100">
+                  <div>
+                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">Current Value</p>
+                    <p className="text-base font-black text-gray-900">
+                      ${currentTotal.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    </p>
+                    <p className="text-[9px] text-gray-400 font-medium">
+                      ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/{asset.unit}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">vs. Deposit</p>
+                    <div className={`flex items-center gap-0.5 justify-end ${isUp ? 'text-green-600' : 'text-red-500'}`}>
+                      {isUp ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                      <span className="text-sm font-black">{isUp ? '+' : ''}{gainPct.toFixed(2)}%</span>
+                    </div>
+                    <p className={`text-[9px] font-bold ${isUp ? 'text-green-500' : 'text-red-400'}`}>
+                      {isUp ? '+' : '-'}${Math.abs(gain).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Insurance */}
+                <div className="mt-3 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3 h-3 text-indigo-400 flex-shrink-0" />
+                  <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider truncate">{asset.insuranceTier}</span>
+                </div>
+              </motion.div>
             );
           })}
         </div>
       )}
 
-      {/* Guard PIN Keypad Modal Overlay */}
+      {/* Vacate PIN modal */}
       <AnimatePresence>
-        {selectedBoxForUnlock && (
+        {vacatingAsset && (
           <div className="fixed inset-0 bg-gray-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
@@ -346,81 +450,53 @@ export default function VaultDepositBox() {
               className="bg-white rounded-[2.5rem] p-8 w-full max-w-sm border border-gray-150 shadow-2xl space-y-6 text-center"
             >
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Biometric Safe Input</span>
-                <button 
-                  onClick={() => setSelectedBoxForUnlock(null)}
-                  className="text-gray-400 hover:text-gray-600 text-xs font-black uppercase"
-                >
-                  Close
-                </button>
+                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Asset Withdrawal</span>
+                <button onClick={() => setVacatingAsset(null)} className="text-gray-400 hover:text-gray-600 text-xs font-black uppercase">Close</button>
               </div>
-
               <div>
-                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-3">
                   <KeyRound className="w-6 h-6 animate-pulse" />
                 </div>
-                <h4 className="text-sm font-black text-gray-900 uppercase">Unlock {selectedBoxForUnlock.label}</h4>
-                <p className="text-[10px] text-gray-400 mt-0.5">INPUT SECURE 4-DIGIT BOX KEYCODE</p>
+                <h4 className="text-sm font-black text-gray-900">Vacate Asset</h4>
+                <p className="text-[10px] text-gray-400 mt-1 leading-relaxed">
+                  Enter your vault PIN to withdraw<br />
+                  <span className="font-bold text-gray-700">{vacatingAsset.name || vacatingAsset.assetType}</span>
+                </p>
               </div>
 
-              {/* Pin dots indicator */}
-              <div className="flex justify-center gap-3 my-4">
+              {/* PIN dots */}
+              <div className="flex justify-center gap-3">
                 {[...Array(4)].map((_, i) => (
-                  <div 
-                    key={i} 
-                    className={`w-4.5 h-4.5 rounded-full border-2 transition-all ${
-                      i < enteredPin.length 
-                        ? 'bg-indigo-600 border-indigo-605 scale-110' 
-                        : keypadError 
-                          ? 'border-red-500 bg-red-100' 
-                          : 'border-gray-200 bg-gray-50'
-                    }`}
-                  />
+                  <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all ${
+                    i < vacatePin.length ? 'bg-red-500 border-red-500 scale-110'
+                    : vacatePinError ? 'border-red-400 bg-red-100'
+                    : 'border-gray-200 bg-gray-50'
+                  }`} />
                 ))}
               </div>
-
-              {keypadError && (
-                <p className="text-[10px] text-red-500 font-extrabold uppercase animate-bounce">
-                  Verification Failed! Code Incorrect.
-                </p>
+              {vacatePinError && (
+                <p className="text-[10px] text-red-500 font-extrabold uppercase animate-bounce">Incorrect PIN. Try again.</p>
               )}
 
-              {/* Numeric Pad Layout */}
+              {/* Keypad */}
               <div className="grid grid-cols-3 gap-3">
-                {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
-                  <button
-                    key={num}
-                    onClick={() => handleUnlockAttempt(num)}
-                    className="h-14 font-mono font-black text-lg text-gray-900 border border-gray-150 bg-gray-50 hover:bg-gray-100 rounded-2xl transition hover:border-gray-350 active:scale-95"
-                  >
-                    {num}
-                  </button>
+                {['1','2','3','4','5','6','7','8','9'].map(n => (
+                  <button key={n} onClick={() => handleVacateDigit(n)}
+                    className="h-14 font-mono font-black text-lg text-gray-900 border border-gray-150 bg-gray-50 hover:bg-gray-100 rounded-2xl transition active:scale-95"
+                  >{n}</button>
                 ))}
-                <button 
-                  onClick={() => setEnteredPin('')}
-                  className="h-14 font-black text-[10px] uppercase text-gray-400 border border-transparent rounded-2xl"
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={() => handleUnlockAttempt('0')}
-                  className="h-14 font-mono font-black text-lg text-gray-900 border border-gray-150 bg-gray-50 hover:bg-gray-100 rounded-2xl transition hover:border-gray-350 active:scale-95"
-                >
-                  0
-                </button>
-                <div className="h-14 flex items-center justify-center text-gray-300">
+                <button onClick={() => setVacatePin('')} className="h-14 font-black text-[10px] uppercase text-gray-400 rounded-2xl">Clear</button>
+                <button onClick={() => handleVacateDigit('0')}
+                  className="h-14 font-mono font-black text-lg text-gray-900 border border-gray-150 bg-gray-50 hover:bg-gray-100 rounded-2xl transition active:scale-95"
+                >0</button>
+                <div className="h-14 flex items-center justify-center">
                   <ShieldCheck className="w-5 h-5 text-indigo-400" />
                 </div>
               </div>
-
-              <p className="text-[9px] text-gray-400 italic">
-                Vault entry sessions are locked and audited automatically.
-              </p>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
-
     </div>
   );
 }
