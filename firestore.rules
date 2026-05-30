@@ -35,6 +35,8 @@ service cloud.firestore {
                       request.resource.data.keys().hasAll(['email', 'displayName', 'role', 'status', 'createdAt']) &&
                       request.resource.data.keys().size() == 5;
                       
+      allow delete: if isAdmin();
+
       allow update: if isAdmin() ||
                       (isSignedIn() && request.auth.uid == userId &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -55,6 +57,8 @@ service cloud.firestore {
                       request.resource.data.balance is number &&
                       request.resource.data.createdAt == request.time;
                       
+      allow delete: if isAdmin();
+
       allow update: if isAdmin() || (isSignedIn() && (
                       // Case A: Owner update (Rename or Withdraw)
                       (resource.data.userId == request.auth.uid && 

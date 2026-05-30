@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, getDocs, where, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, updateDoc, getDocs, where, runTransaction, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { UserProfile, Transaction, BankAccount } from '../types';
-import { Users, FileText, CheckCircle, XCircle, Clock, Shield, ExternalLink, Search, TrendingUp, ArrowUpRight, ArrowDownLeft, Coins } from 'lucide-react';
+import { Users, FileText, CheckCircle, XCircle, Clock, Shield, ExternalLink, Search, TrendingUp, ArrowUpRight, ArrowDownLeft, Coins, Trash2, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const AdminDashboard: React.FC = () => {
@@ -37,6 +37,33 @@ const AdminDashboard: React.FC = () => {
       await updateDoc(doc(db, 'users', uid), { status });
     } catch (err) {
       console.error("Failed to update status", err);
+    }
+  };
+
+  const handleDeleteUser = async (user: UserProfile) => {
+    if (!window.confirm(`Permanently delete ${user.displayName} (${user.email})? This will remove their profile and all associated accounts, cards, and investments.`)) return;
+    try {
+      const batch = writeBatch(db);
+      const collections = ['accounts', 'cards', 'investments', 'deposit_boxes'];
+      for (const col of collections) {
+        const snap = await getDocs(query(collection(db, col), where('userId', '==', user.uid)));
+        snap.docs.forEach(d => batch.delete(d.ref));
+      }
+      batch.delete(doc(db, 'users', user.uid));
+      await batch.commit();
+    } catch (err: any) {
+      console.error("Failed to delete user", err);
+      alert(err.message || "Failed to delete user.");
+    }
+  };
+
+  const handleResetCompliance = async (user: UserProfile) => {
+    if (!window.confirm(`Force ${user.displayName} to redo compliance onboarding?`)) return;
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { onboardingCompleted: false });
+    } catch (err: any) {
+      console.error("Failed to reset compliance", err);
+      alert(err.message || "Failed to reset compliance.");
     }
   };
 
@@ -215,32 +242,49 @@ const AdminDashboard: React.FC = () => {
                                     <StatusBadge status={user.status} />
                                 </td>
                                 <td className="p-6">
-                                    {user.status === 'pending' && (
-                                        <div className="flex gap-2">
-                                            <button 
-                                                onClick={() => handleStatusChange(user.uid, 'approved')}
-                                                className="p-2 text-green-600 hover:bg-green-50 rounded-xl transition-all"
-                                                title="Approve"
+                                    <div className="flex items-center gap-1">
+                                        {user.status === 'pending' ? (
+                                            <>
+                                                <button
+                                                    onClick={() => handleStatusChange(user.uid, 'approved')}
+                                                    className="p-2 text-green-600 hover:bg-green-50 rounded-xl transition-all"
+                                                    title="Approve"
+                                                >
+                                                    <CheckCircle className="w-5 h-5" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleStatusChange(user.uid, 'rejected')}
+                                                    className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                                    title="Reject"
+                                                >
+                                                    <XCircle className="w-5 h-5" />
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <button
+                                                onClick={() => handleStatusChange(user.uid, 'pending')}
+                                                className="text-xs font-bold text-gray-400 hover:text-indigo-600 uppercase tracking-widest px-2"
+                                                title="Reset approval status"
                                             >
-                                                <CheckCircle className="w-5 h-5" />
+                                                Reset
                                             </button>
-                                            <button 
-                                                onClick={() => handleStatusChange(user.uid, 'rejected')}
-                                                className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                                                title="Reject"
-                                            >
-                                                <XCircle className="w-5 h-5" />
-                                            </button>
-                                        </div>
-                                    )}
-                                    {user.status !== 'pending' && (
-                                        <button 
-                                          onClick={() => handleStatusChange(user.uid, 'pending')}
-                                          className="text-xs font-bold text-gray-400 hover:text-indigo-600 uppercase tracking-widest"
+                                        )}
+                                        <div className="w-px h-5 bg-gray-100 mx-1" />
+                                        <button
+                                            onClick={() => handleResetCompliance(user)}
+                                            className="p-2 text-amber-500 hover:bg-amber-50 rounded-xl transition-all"
+                                            title="Force compliance re-onboarding"
                                         >
-                                            Reset
+                                            <RotateCcw className="w-4 h-4" />
                                         </button>
-                                    )}
+                                        <button
+                                            onClick={() => handleDeleteUser(user)}
+                                            className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all"
+                                            title="Delete user"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
