@@ -167,7 +167,7 @@ const AdminDashboard: React.FC = () => {
             const currentBalance = accountSnap.data().balance || 0;
             firebaseTx.update(accountRef, {
               balance: currentBalance + freshTx.amount,
-              lastTransactionId: freshTx.id
+              lastTransactionId: freshTxSnap.id
             });
           }
           // If rejected/failed, no change in balance (since topup didn't add funds yet).
@@ -182,7 +182,7 @@ const AdminDashboard: React.FC = () => {
               const currentBalance = accountSnap.data().balance || 0;
               firebaseTx.update(accountRef, {
                 balance: currentBalance + freshTx.amount,
-                lastTransactionId: freshTx.id
+                lastTransactionId: freshTxSnap.id
               });
             }
           }
