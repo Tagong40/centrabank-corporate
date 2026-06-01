@@ -4,7 +4,7 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { BankAccount } from '../types';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, CheckCircle2, Loader2, AlertCircle, Info, Landmark, ShieldCheck, Zap } from 'lucide-react';
+import { ArrowLeft, Send, CheckCircle2, Loader2, AlertCircle, Info, Landmark, ShieldCheck, Zap, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const MAJOR_BANKS = [
@@ -42,6 +42,7 @@ const Transfer: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastTxId, setLastTxId] = useState('');
 
   useEffect(() => {
     if (!profile) return;
@@ -160,8 +161,9 @@ const Transfer: React.FC = () => {
         });
       });
 
+      setLastTxId(txId);
       setSuccess(true);
-      setTimeout(() => navigate('/'), 4000);
+      setTimeout(() => navigate('/'), 6000);
     } catch (err: any) {
       console.error('Transfer Error:', err);
       setError(err.message || "Transfer system timed out. Please try again.");
@@ -171,6 +173,76 @@ const Transfer: React.FC = () => {
   };
 
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
+
+  const downloadReceipt = () => {
+    const fromAccount = accounts.find(a => a.id === selectedAccountId);
+    const transferAmount = parseFloat(amount);
+    const wireFee = transferSpeed === 'wire' && transferType === 'external' ? 15 : 0;
+    const total = transferAmount + wireFee;
+    const bank = recipientBankName === 'Other Financial Institution' ? customBankName : recipientBankName;
+    const now = new Date().toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'medium' });
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>CentraBank Transfer Receipt</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f9fafb; padding: 40px; color: #111; }
+    .card { background: #fff; max-width: 520px; margin: 0 auto; border-radius: 24px; overflow: hidden; border: 1px solid #e5e7eb; box-shadow: 0 4px 24px rgba(0,0,0,0.07); }
+    .header { background: #4f46e5; padding: 32px; text-align: center; }
+    .header h1 { color: #fff; font-size: 22px; font-weight: 900; letter-spacing: -0.5px; }
+    .header p { color: #c7d2fe; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-top: 4px; }
+    .stamp { background: #f0fdf4; border: 2px solid #86efac; color: #166534; font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; text-align: center; padding: 12px; }
+    .body { padding: 28px 32px; }
+    .row { display: flex; justify-content: space-between; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid #f3f4f6; }
+    .row:last-child { border-bottom: none; }
+    .label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; }
+    .value { font-size: 13px; font-weight: 800; color: #111827; text-align: right; max-width: 60%; }
+    .total .value { color: #4f46e5; font-size: 18px; }
+    .footer { background: #f9fafb; padding: 20px 32px; border-top: 1px solid #f3f4f6; text-align: center; }
+    .footer p { font-size: 10px; color: #9ca3af; line-height: 1.6; }
+    .tx-id { font-family: monospace; font-size: 11px; color: #6b7280; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>CentraBank Corporate</h1>
+      <p>Transfer Receipt</p>
+    </div>
+    <div class="stamp">✓ Transfer Submitted Successfully</div>
+    <div class="body">
+      <div class="row"><span class="label">Receipt ID</span><span class="value tx-id">${lastTxId.slice(0, 16).toUpperCase()}</span></div>
+      <div class="row"><span class="label">Date &amp; Time</span><span class="value">${now}</span></div>
+      <div class="row"><span class="label">From Account</span><span class="value">${fromAccount?.accountName ?? ''}<br/><span style="font-size:11px;color:#6b7280">${fromAccount?.accountNumber ?? ''}</span></span></div>
+      <div class="row"><span class="label">Transfer Type</span><span class="value">${transferType === 'internal' ? 'Internal Sweep' : 'External Bank Transfer'}</span></div>
+      ${transferType === 'external' ? `<div class="row"><span class="label">Recipient Bank</span><span class="value">${bank}</span></div>` : ''}
+      ${transferType === 'external' ? `<div class="row"><span class="label">Beneficiary</span><span class="value">${beneficiaryName}</span></div>` : ''}
+      <div class="row"><span class="label">Target Account</span><span class="value">${toAccount}</span></div>
+      <div class="row"><span class="label">Route Speed</span><span class="value">${transferType === 'internal' ? 'Instant Sweep' : transferSpeed.toUpperCase()}</span></div>
+      <div class="row"><span class="label">Transfer Amount</span><span class="value">$${transferAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
+      ${wireFee > 0 ? `<div class="row"><span class="label">Wire Fee</span><span class="value">$${wireFee.toFixed(2)}</span></div>` : ''}
+      <div class="row total"><span class="label">Total Charged</span><span class="value">$${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
+    </div>
+    <div class="footer">
+      <p>This is an official CentraBank Corporate transaction receipt.<br/>
+      Keep this document for your records. Transaction ID: ${lastTxId}<br/>
+      CentraBank Corporate — 800 Financial Plaza, New York, NY 10005</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `CentraBank-Receipt-${lastTxId.slice(0, 8).toUpperCase()}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="pt-24 pb-20 max-w-2xl mx-auto px-4">
@@ -226,6 +298,14 @@ const Transfer: React.FC = () => {
                   </span>
                 </div>
               </div>
+
+              <button
+                onClick={downloadReceipt}
+                className="flex items-center justify-center gap-2 mx-auto px-6 py-3 bg-white border-2 border-indigo-100 hover:border-indigo-400 hover:bg-indigo-50 text-indigo-600 text-xs font-black uppercase tracking-wider rounded-2xl transition-all"
+              >
+                <Download className="w-4 h-4" />
+                Download Receipt
+              </button>
             </motion.div>
           ) : (
             <motion.div 
